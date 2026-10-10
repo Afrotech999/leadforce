@@ -1,0 +1,265 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- SMS + telephony -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_MMS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+
+    <!-- Building a campaign list from the phone's own contacts. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Calls shown inside conversations, and the after-call note nudge.
+         Read-only; nothing leaves the phone. -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <!-- The notes card that floats over an incoming call. Granted from its
+         own switch in Settings, never demanded. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- WRITE_SMS lets a default SMS handler mirror inbound personal texts into the
+         system inbox so nothing is lost while this app holds the role. It is granted
+         implicitly to whichever app currently owns ROLE_SMS. -->
+    <uses-permission
+        android:name="android.permission.WRITE_SMS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- Send engine runs as a foreground service with a wake lock (spec 2.5) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Asked for only from an explicit button in Settings. A paced send loop runs for
+         the best part of an hour, and OEM power managers stop it without it. -->
+    <uses-permission
+        android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+        tools:ignore="BatteryLife" />
+
+    <!-- Backup export on pre-scoped-storage devices -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <application
+        android:name=".CampaignSmsApp"
+        android:label="LeadForce"
+        android:icon="@mipmap/ic_launcher"
+        android:enableOnBackInvokedCallback="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Required for default-SMS-app eligibility (spec 9.1): a launchable
+                 activity that handles sms:/smsto:/mms:/mmsto:. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SENDTO" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- The car shelf's front door: share a seller's Telegram message
+                 (photos and caption) straight into LeadForce, which files the car
+                 and asks who sent it. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- Required for default-SMS-app eligibility (spec 9.1): inbound SMS. -->
+        <receiver
+            android:name=".SmsDeliverReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_DELIVER" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Required for default-SMS-app eligibility (spec 9.1): inbound MMS.
+             We build no MMS features; this exists so the role can be granted. -->
+        <receiver
+            android:name=".MmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_WAP_PUSH">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
+                <data android:mimeType="application/vnd.wap.mms-message" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Required for default-SMS-app eligibility (spec 9.1): quick response. -->
+        <service
+            android:name=".HeadlessSmsSendService"
+            android:exported="true"
+            android:permission="android.permission.SEND_RESPOND_VIA_MESSAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.RESPOND_VIA_MESSAGE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".SendService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Sent / delivered receipts. Declared here rather than registered at runtime so
+             a receipt still reconciles the database if the process was killed mid-batch. -->
+        <receiver
+            android:name=".SendResultReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.loomsolutions.campaign_sms.SMS_SENT" />
+                <action android:name="com.loomsolutions.campaign_sms.SMS_DELIVERED" />
+                <data android:scheme="campaignsms" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Fires a scheduled campaign at its chosen time. -->
+        <receiver
+            android:name=".Scheduler$ScheduleReceiver"
+            android:exported="false" />
+
+        <!-- Fires one scheduled personal message. -->
+        <receiver
+            android:name=".MessageScheduler$MessageReceiver"
+            android:exported="false" />
+
+        <!-- Hears a call end and offers to write a note about it. -->
+        <receiver
+            android:name=".CallReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Raises the reminder for a viewing or meeting. -->
+        <receiver
+            android:name=".AppointmentScheduler$AppointmentReceiver"
+            android:exported="false" />
+
+        <!-- Reply and mark-read buttons on an incoming-message notification. -->
+        <receiver
+            android:name=".NotificationActions"
+            android:exported="false" />
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- So a backup can be handed to Gmail or Telegram. A raw file:// URI
+             throws FileUriExposedException the moment another app opens it. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Reads incoming messages from the messengers the user ticks, so
+             nothing is missed because it arrived in the wrong app. Bound by
+             the system only after notification access is granted by hand, and
+             it stores nothing for an app that has not been chosen. -->
+        <service
+            android:name=".ChatCapture"
+            android:exported="false"
+            android:label="LeadForce"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+
+    <queries>
+        <!-- The messengers the chat feed can watch: named one by one so the
+             picker can show only the ones installed, without asking for the
+             see-every-app permission. -->
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="org.thunderdog.challegram" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.facebook.orca" />
+        <package android:name="com.viber.voip" />
+        <package android:name="com.imo.android.imoim" />
+        <package android:name="org.thoughtcrime.securesms" />
+        <!-- So we can name the app that was default before us, for one-tap restore. -->
+        <intent>
+            <action android:name="android.provider.Telephony.SMS_DELIVER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+        <!-- The About screen hands these off to the dialer, mail client and browser. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="mailto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+</manifest>

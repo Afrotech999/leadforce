@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The launcher icon is full-bleed: the mark's own blue everywhere, so
+         no launcher mask can ever show a white ring around it. -->
+    <color name="ic_launcher_background">#2E3DD4</color>
+
+    <!-- The app's page colour, matched to AppColors.canvas so the window behind
+         Flutter, the launch screen and the first frame are all the same shade.
+         A different one here shows as a flash on cold start. -->
+    <color name="window_background">#EEEFF9</color>
+</resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Only the one folder backups are copied into. Nothing else in the app's
+         storage is reachable through the provider. -->
+    <cache-path name="backup" path="backup/" />
+</paths>

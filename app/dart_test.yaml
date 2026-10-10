@@ -1,0 +1,10 @@
+# The preview suite renders screens to PNG so the design can be looked at. It
+# is not a check — a golden of a screen fails on every deliberate change — so
+# it is skipped unless asked for by name:
+#
+#   flutter test --tags preview --update-goldens
+#
+# and the images it writes are not committed.
+tags:
+  preview:
+    skip: "design previews: flutter test --tags preview --update-goldens"

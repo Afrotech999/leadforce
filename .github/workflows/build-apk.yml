@@ -1,0 +1,120 @@
+name: Build APK
+
+# Manual only: an APK is built when someone starts this workflow by hand
+# (Actions → Build APK → Run workflow), never on a push.
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Attach the APK to the apk-latest release'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # A hung Gradle step should fail the run, not sit for six hours.
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.8
+          channel: stable
+          cache: true
+
+      # The runners here are slow enough that a cold Gradle download dominates the
+      # build. Seed this once and later runs skip it entirely.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('app/android/**/*.gradle*', 'app/android/gradle/wrapper/gradle-wrapper.properties', 'app/pubspec.lock') }}
+          restore-keys: |
+            gradle-
+
+      # The signing key lives in a repository secret, not in git. Every build
+      # must use the same key or Android refuses to install one over another.
+      - name: Signing key
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$SIGNING_KEYSTORE_BASE64" ]; then
+            echo "::error::Add the SIGNING_KEYSTORE_BASE64 secret (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+          echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > android/ci-signing.keystore
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      # Both APKs are release builds — AOT-compiled, no debug assertions.
+      # The debug APK is gone from here on purpose: the user installed it as
+      # "the full APK" and got a build that is 5-10x slower and paints a red
+      # screen for framework assertions that release ignores. Signed with the
+      # debug key (see app/build.gradle.kts) so both install by sideload.
+      #
+      # Universal first: the second build's app-release.apk would overwrite
+      # the first's, so each is renamed before the next runs.
+      - name: Build release APK (universal)
+        timeout-minutes: 70
+        run: |
+          flutter build apk --release
+          mkdir -p ../out
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "../out/leadforce-universal-${GITHUB_SHA::7}.apk"
+
+      - name: Build release APK (arm64)
+        timeout-minutes: 40
+        run: |
+          flutter build apk --release --target-platform android-arm64
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "../out/leadforce-arm64-${GITHUB_SHA::7}.apk"
+
+      - name: List the artifacts
+        run: ls -la ../out
+
+      # No upload-artifact step on purpose. It uploaded the same two APKs that
+      # the release below already carries, and when the account's Actions
+      # storage filled up it failed the job — before the release step, so a
+      # perfectly good build published nothing at all. The release is the copy
+      # that matters and it costs no artifact storage.
+
+      # Always publish, not just on manual dispatch: the Actions artifact download
+      # host is not reachable everywhere, whereas release assets are served from
+      # github.com. This is the link that actually works.
+      - name: Publish to apk-latest release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete apk-latest --yes --cleanup-tag || true
+          gh release create apk-latest \
+            --title "LeadForce — latest APK" \
+            --notes "Build ${GITHUB_SHA::7} on \`${GITHUB_REF_NAME}\`. Both are fast release builds: arm64 is smaller and right for almost every phone; universal installs on anything." \
+            --target "$GITHUB_SHA" \
+            out/*.apk
